@@ -26,6 +26,7 @@
 
 import snappy
 
+from autobahn.exception import PayloadExceededError
 from autobahn.websocket.compress_base import (
     PerMessageCompress,
     PerMessageCompressOffer,
@@ -479,7 +480,18 @@ class PerMessageSnappy(PerMessageCompress, PerMessageSnappyMixin):
                 self._decompressor = snappy.StreamDecompressor()
 
     def decompress_message_data(self, data, max_output_len=None):
-        return self._decompressor.decompress(data)
+        # python-snappy's StreamDecompressor has no output-length argument, so
+        # the frame is decompressed in full (bounded on the wire by
+        # maxFramePayloadSize) and then checked. This is a weaker,
+        # per-frame-granular guarantee than the incremental cap deflate/bzip2
+        # provide, but it still rejects an over-budget message cleanly.
+        data = self._decompressor.decompress(data)
+        if max_output_len is not None and len(data) > max_output_len:
+            raise PayloadExceededError(
+                "WebSocket message exceeds decompression limit of "
+                f"{max_output_len} octets"
+            )
+        return data
 
     def end_decompress_message(self):
         pass

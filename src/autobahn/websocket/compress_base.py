@@ -60,4 +60,22 @@ class PerMessageCompressResponseAccept:
 class PerMessageCompress:
     """
     Base class for WebSocket compression negotiated parameters.
+
+    Concrete subclasses (one per permessage-compress extension) implement the
+    decompression interface used by the WebSocket protocol:
+
+    - ``start_decompress_message(self)``
+    - ``decompress_message_data(self, data, max_output_len=None)``
+    - ``end_decompress_message(self)``
+
+    Bounded-decompression contract for ``decompress_message_data``: when
+    ``max_output_len`` is not ``None``, the call returns at most
+    ``max_output_len`` octets of decompressed output and raises
+    :class:`autobahn.exception.PayloadExceededError` if the input would produce
+    more - it never silently truncates. ``max_output_len=None`` (the default)
+    leaves decompression unbounded. Backends whose underlying library exposes an
+    incremental output limit (deflate, bzip2) enforce the bound before fully
+    inflating a frame; backends without one (snappy, brotli) inflate the frame
+    (already bounded on the wire by ``maxFramePayloadSize``) and then check,
+    a weaker but still-clean per-frame guarantee.
     """

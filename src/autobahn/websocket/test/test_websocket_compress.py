@@ -139,6 +139,24 @@ class BoundedDecompressMaxOutputLenTests(unittest.TestCase):
                 self.assertEqual(out, self.SMALL)
                 decompressor.end_decompress_message()
 
+    def test_bounded_boundary_ok(self):
+        # Inflated size exactly equal to max_output_len is accepted in full:
+        # the limit is "strictly greater", consistent across all backends.
+        payload = b"z" * 256
+        for codec in _CODECS:
+            with self.subTest(codec=codec):
+                pair = _make_compressor_pair(codec)
+                if pair is None:
+                    continue
+                compressor, decompressor = pair
+                body = self._compress(compressor, payload)
+                decompressor.start_decompress_message()
+                out = decompressor.decompress_message_data(
+                    body, max_output_len=len(payload)
+                )
+                self.assertEqual(out, payload)
+                decompressor.end_decompress_message()
+
     def test_unbounded_default_roundtrips(self):
         for codec in _CODECS:
             with self.subTest(codec=codec):
