@@ -177,12 +177,17 @@ class IWebSocketServerChannelFactory(abc.ABC):
             incoming frames (default: `True`).
         :type applyMask: bool or None
 
-        :param maxFramePayloadSize: Maximum frame payload size that will be accepted when receiving or
+        :param maxFramePayloadSize: Maximum size of a single frame's payload as received on
+            the wire (i.e. before any permessage-compress inflation) that will be accepted, or
             `0` for unlimited (default: `0`).
         :type maxFramePayloadSize: int or None
 
-        :param maxMessagePayloadSize: Maximum message payload size (after reassembly of fragmented messages) that
-            will be accepted when receiving or `0` for unlimited (default: `0`).
+        :param maxMessagePayloadSize: Maximum size of a whole message after reassembly of
+            fragmented frames and after decompression (that is, the uncompressed,
+            application-level payload) that will be accepted, or `0` for unlimited
+            (default: `0`). When permessage-compress is negotiated this bounds the inflated
+            size, not the compressed wire size, so a small compressed frame that inflates
+            beyond the limit is rejected with close code 1009 (message too big).
         :type maxMessagePayloadSize: int or None
 
         :param autoFragmentSize: Automatic fragmentation of outgoing data messages (when using the message-based API)
@@ -378,12 +383,17 @@ class IWebSocketClientChannelFactory(abc.ABC):
             incoming frames (default: `True`).
         :type applyMask: bool
 
-        :param maxFramePayloadSize: Maximum frame payload size that will be accepted when receiving or
+        :param maxFramePayloadSize: Maximum size of a single frame's payload as received on
+            the wire (i.e. before any permessage-compress inflation) that will be accepted, or
             `0` for unlimited (default: `0`).
         :type maxFramePayloadSize: int
 
-        :param maxMessagePayloadSize: Maximum message payload size (after reassembly of fragmented messages) that
-            will be accepted when receiving or `0` for unlimited (default: `0`).
+        :param maxMessagePayloadSize: Maximum size of a whole message after reassembly of
+            fragmented frames and after decompression (that is, the uncompressed,
+            application-level payload) that will be accepted, or `0` for unlimited
+            (default: `0`). When permessage-compress is negotiated this bounds the inflated
+            size, not the compressed wire size, so a small compressed frame that inflates
+            beyond the limit is rejected with close code 1009 (message too big).
         :type maxMessagePayloadSize: int
 
         :param autoFragmentSize: Automatic fragmentation of outgoing data messages (when using the message-based API)

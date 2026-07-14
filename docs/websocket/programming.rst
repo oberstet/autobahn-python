@@ -508,8 +508,8 @@ Common Options (server and client)
  - trackTimings: if True, enable debug timing code
  - utf8validateIncoming: if True (default), validate all incoming UTF8
  - applyMask: if True (default) apply mask to frames, when available
- - maxFramePayloadSize: if 0 (default), unlimited-sized frames allowed
- - maxMessagePayloadSize: if 0 (default), unlimited re-assembled payloads
+ - maxFramePayloadSize: max size of a single frame's on-the-wire (compressed) payload; if 0 (default), unlimited-sized frames allowed
+ - maxMessagePayloadSize: max size of a whole message after reassembly and decompression (the uncompressed, application-level payload); if 0 (default), unlimited. With permessage-compress this bounds the inflated size, not the compressed wire size, so a small frame that inflates past the limit is rejected (close code 1009)
  - autoFragmentSize: if 0 (default), don't fragment
  - failByDrop: if True (default), failed connections are terminated immediately
  - echoCloseCodeReason: if True, echo back the close reason/code
