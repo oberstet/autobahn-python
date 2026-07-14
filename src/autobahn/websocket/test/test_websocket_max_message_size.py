@@ -34,7 +34,6 @@ import txaio
 
 from autobahn.testutil import FakeTransport
 from autobahn.wamp.types import TransportDetails
-from autobahn.websocket.compress import PERMESSAGE_COMPRESSION_EXTENSION
 from autobahn.websocket.protocol import (
     WebSocketProtocol,
     WebSocketServerFactory,
@@ -49,20 +48,42 @@ def _make_compressor_pair(name):
     is not installed. The server decompressor is created WITHOUT any
     extension-level max_message_size, so that enforcement is exercised purely
     at the protocol level via maxMessagePayloadSize.
+
+    Concrete per-codec imports (rather than the union-typed extension registry)
+    keep the constructor call sites resolvable for the static type checker.
     """
-    spec = PERMESSAGE_COMPRESSION_EXTENSION.get(name)
-    if spec is None:
-        return None
-    pmce = spec["PMCE"]
     if name == "permessage-deflate":
+        from autobahn.websocket.compress_deflate import PerMessageDeflate
+
         return (
-            pmce(False, False, False, 15, 15, 8),
-            pmce(True, False, False, 15, 15, 8),
+            PerMessageDeflate(False, False, False, 15, 15, 8),
+            PerMessageDeflate(True, False, False, 15, 15, 8),
         )
     if name == "permessage-bzip2":
-        return (pmce(False, 9, 9), pmce(True, 9, 9))
-    # snappy and brotli share the no-context-takeover constructor shape
-    return (pmce(False, False, False), pmce(True, False, False))
+        try:
+            from autobahn.websocket.compress_bzip2 import PerMessageBzip2
+        except ImportError:
+            return None
+        return (PerMessageBzip2(False, 9, 9), PerMessageBzip2(True, 9, 9))
+    if name == "permessage-snappy":
+        try:
+            from autobahn.websocket.compress_snappy import PerMessageSnappy
+        except ImportError:
+            return None
+        return (
+            PerMessageSnappy(False, False, False),
+            PerMessageSnappy(True, False, False),
+        )
+    if name == "permessage-brotli":
+        try:
+            from autobahn.websocket.compress_brotli import PerMessageBrotli
+        except ImportError:
+            return None
+        return (
+            PerMessageBrotli(False, False, False),
+            PerMessageBrotli(True, False, False),
+        )
+    return None
 
 
 def _build_compressed_frame(client_compressor, payload, opcode=0x02):
