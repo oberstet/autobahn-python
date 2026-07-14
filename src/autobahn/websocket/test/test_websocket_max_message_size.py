@@ -171,6 +171,13 @@ def _make_server(server_decompressor, max_message_size, streaming=False):
     proto.transport = FakeTransport()
     proto._transport_details = TransportDetails()
     proto._connectionMade()
+    # We drive the protocol bytes directly and never run a real close
+    # handshake, so cancel the opening-handshake timeout that _connectionMade
+    # scheduled on the reactor (mirrors _connectionLost). Otherwise the
+    # DelayedCall leaks and Twisted's trial reports a dirty reactor.
+    if proto.openHandshakeTimeoutCall is not None:
+        proto.openHandshakeTimeoutCall.cancel()
+        proto.openHandshakeTimeoutCall = None
     proto.state = WebSocketProtocol.STATE_OPEN
     proto.websocket_version = 13
     # normally set up when the opening handshake completes:

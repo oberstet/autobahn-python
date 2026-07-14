@@ -1869,6 +1869,26 @@ class WebSocketProtocol(ObservableMixin):
                 self.trafficStats.incomingOctetsWebSocketLevel += compressedLen
                 self.trafficStats.incomingOctetsAppLevel += uncompressedLen
 
+            # enforce maxMessagePayloadSize against the UNCOMPRESSED (inflated)
+            # message size. onMessageFrameBegin() already counted the compressed
+            # frame length into message_data_total_length, so for a compressed
+            # message we add the inflation delta to arrive at the uncompressed
+            # total and re-check here. Without this a small compressed frame
+            # could inflate past the limit and reach the application, since the
+            # frame-begin check only saw the compressed size
+            # (see security advisory GHSA-hxp9-w8x3-p566).
+            #
+            if self._isMessageCompressed and not self.failedByMe:
+                self.message_data_total_length += uncompressedLen - compressedLen
+                if 0 < self.maxMessagePayloadSize < self.message_data_total_length:
+                    self.wasMaxMessagePayloadSizeExceeded = True
+                    self._max_message_size_exceeded(
+                        self.message_data_total_length,
+                        self.maxMessagePayloadSize,
+                        f"received WebSocket message size {self.message_data_total_length} exceeds payload limit of {self.maxMessagePayloadSize} octets",
+                    )
+                    return False
+
             # incrementally validate UTF-8 payload
             #
             if self.utf8validateIncomingCurrentMessage:
