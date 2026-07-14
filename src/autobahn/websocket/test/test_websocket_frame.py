@@ -26,6 +26,7 @@
 
 import os
 import struct
+import zlib
 
 if os.environ.get("USE_TWISTED", False):
     from base64 import b64decode
@@ -40,6 +41,7 @@ if os.environ.get("USE_TWISTED", False):
         WebSocketServerFactory,
         WebSocketServerProtocol,
     )
+    from autobahn.exception import PayloadExceededError
     from autobahn.websocket.compress_deflate import PerMessageDeflate
     from twisted.internet.address import IPv4Address
     from twisted.internet.task import Clock
@@ -84,47 +86,81 @@ if os.environ.get("USE_TWISTED", False):
     mock_handshake_server = b'HTTP/1.1 101 Switching Protocols\r\nServer: AutobahnPython/0.10.2\r\nX-Powered-By: AutobahnPython/0.10.2\r\nUpgrade: WebSocket\r\nConnection: Upgrade\r\nSec-WebSocket-Protocol: wamp.2.json\r\nSec-WebSocket-Accept: QIatSt9QkZPyS4QQfdufO8TgkL0=\r\n\r\n\x81~\x02\x19[1,"crossbar",{"roles":{"subscriber":{"features":{"publisher_identification":true,"pattern_based_subscription":true,"subscription_revocation":true}},"publisher":{"features":{"publisher_identification":true,"publisher_exclusion":true,"subscriber_blackwhite_listing":true}},"caller":{"features":{"caller_identification":true,"progressive_call_results":true}},"callee":{"features":{"progressive_call_results":true,"pattern_based_registration":true,"registration_revocation":true,"shared_registration":true,"caller_identification":true}}}}]\x18'
 
     class TestDeflate(unittest.TestCase):
-        def test_max_size(self):
-            decoder = PerMessageDeflate(
+        @staticmethod
+        def _decoder(max_message_size=None):
+            return PerMessageDeflate(
                 is_server=False,
                 server_no_context_takeover=False,
                 client_no_context_takeover=False,
                 server_max_window_bits=15,
                 client_max_window_bits=15,
                 mem_level=8,
-                max_message_size=10,
+                max_message_size=max_message_size,
             )
 
-            # 2000 'x' characters compressed
-            compressed_data = (
-                b"\xab\xa8\x18\x05\xa3`\x14\x8c\x82Q0\nF\xc1P\x07\x00\xcf@\xa9\xae"
+        @staticmethod
+        def _compress(payload, window_bits=15):
+            # Produce the permessage-deflate wire body for `payload`: raw
+            # DEFLATE, Z_SYNC_FLUSH, with the trailing 0x00 0x00 0xff 0xff
+            # stripped (mirrors PerMessageDeflate.end_compress_message()).
+            compressor = zlib.compressobj(
+                zlib.Z_DEFAULT_COMPRESSION, zlib.DEFLATED, -window_bits
             )
+            return (
+                compressor.compress(payload) + compressor.flush(zlib.Z_SYNC_FLUSH)
+            )[:-4]
 
+        def test_max_size_rejects_oversized(self):
+            # A message that inflates beyond max_message_size must be rejected
+            # cleanly (PayloadExceededError), NOT silently truncated to the cap.
+            decoder = self._decoder(max_message_size=10)
+            body = self._compress(b"x" * 2000)
             decoder.start_decompress_message()
-            data = decoder.decompress_message_data(compressed_data)
+            self.assertRaises(
+                PayloadExceededError, decoder.decompress_message_data, body
+            )
 
-            # since we set max_message_size, we should only get that
-            # many bytes back.
-            self.assertEqual(data, b"x" * 10)
+        def test_max_size_boundary_ok(self):
+            # A message whose inflated size is exactly max_message_size is
+            # accepted and returned in full (the limit is "strictly greater").
+            decoder = self._decoder(max_message_size=2000)
+            body = self._compress(b"x" * 2000)
+            decoder.start_decompress_message()
+            data = decoder.decompress_message_data(body)
+            self.assertEqual(data, b"x" * 2000)
+
+        def test_under_max_size_roundtrips_without_corruption(self):
+            # Under the cap: full data returned AND end_decompress_message()
+            # must not raise. The old truncation left the stream mid-token,
+            # so the sync-flush trailer raised zlib error -3.
+            decoder = self._decoder(max_message_size=2000)
+            payload = b"x" * 1000
+            body = self._compress(payload)
+            decoder.start_decompress_message()
+            data = decoder.decompress_message_data(body)
+            self.assertEqual(data, payload)
+            decoder.end_decompress_message()
+
+        def test_max_size_cumulative_across_frames(self):
+            # The cap bounds the whole message, not each frame: a message
+            # delivered in two frame-sized chunks whose combined inflated size
+            # exceeds the cap must be rejected, not truncated.
+            decoder = self._decoder(max_message_size=1500)
+            body = self._compress(b"x" * 2000)
+            half = len(body) // 2
+            decoder.start_decompress_message()
+
+            def feed_both():
+                decoder.decompress_message_data(body[:half])
+                decoder.decompress_message_data(body[half:])
+
+            self.assertRaises(PayloadExceededError, feed_both)
 
         def test_no_max_size(self):
-            decoder = PerMessageDeflate(
-                is_server=False,
-                server_no_context_takeover=False,
-                client_no_context_takeover=False,
-                server_max_window_bits=15,
-                client_max_window_bits=15,
-                mem_level=None,
-            )
-
-            # 2000 'x' characters compressed
-            compressed_data = (
-                b"\xab\xa8\x18\x05\xa3`\x14\x8c\x82Q0\nF\xc1P\x07\x00\xcf@\xa9\xae"
-            )
-
+            decoder = self._decoder(max_message_size=None)
+            body = self._compress(b"x" * 2000)
             decoder.start_decompress_message()
-            data = decoder.decompress_message_data(compressed_data)
-
+            data = decoder.decompress_message_data(body)
             self.assertEqual(data, b"x" * 2000)
 
     class TestClient(unittest.TestCase):
