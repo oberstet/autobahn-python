@@ -8,6 +8,11 @@ Changelog
 26.7.1
 ------
 
+**Security**
+
+* Fix WebSocket ``maxMessagePayloadSize`` being enforced against the compressed on-the-wire frame length instead of the uncompressed reassembled message size when permessage-compress (deflate/bzip2/snappy/brotli) is negotiated. A small compressed frame could inflate far beyond the configured limit and be delivered to the application (a decompression-bomb style denial-of-service; security advisory GHSA-hxp9-w8x3-p566, same class as CVE-2016-10544). The limit is now re-checked at the inflation site against the running uncompressed message size, and the connection is failed with close code 1009 (message too big) before delivery — for both the whole-message and streaming receive APIs and every compression backend. Behaviour change: a compressed message that inflates past ``maxMessagePayloadSize`` is now rejected where it previously passed; uncompressed traffic and the per-frame ``maxFramePayloadSize`` wire guard are unaffected (#1909)
+* Fix the permessage-deflate ``max_message_size`` receive cap silently truncating an over-limit message and raising a zlib error instead of cleanly rejecting it: the bounded ``decompress(…, max_length)`` left the remaining input in ``unconsumed_tail`` undrained, so the message was corrupted rather than reported. Decompression is now bounded cumulatively across frames and raises ``PayloadExceededError`` as soon as the uncompressed size would exceed the cap (#1908)
+
 **FlatBuffers**
 
 * Fix ``check_zlmdb_flatbuffers_version_in_sync()`` comparing the build-time ``version()`` (which is ``(0, 0, 0, None, None)`` on installed wheels, where the vendored FlatBuffers ``__git_version__`` is unstamped) — it now compares the reliably-stamped ``__version__`` and returns a version string. Added regression tests (#1891)
