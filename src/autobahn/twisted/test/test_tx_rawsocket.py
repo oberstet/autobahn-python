@@ -70,6 +70,38 @@ class RawSocketHandshakeTests(unittest.TestCase):
         session_mock.onOpen.assert_called_once_with(p)
         server_session_mock.onOpen.assert_called_once_with(sp)
 
+    def test_receive_limit_advertised_and_enforced(self):
+        """
+        ``setProtocolOptions(maxMessagePayloadSize=...)`` configures the server's
+        received-message size cap: the advertised handshake length exponent and
+        the enforced ``MAX_LENGTH`` are the configured max rounded up to the next
+        power of two. This mirrors the asyncio backend (see
+        ``test_aio_rawsocket.RECV_LIMIT_CASES``) so both backends make identical
+        accept/reject decisions for the same configuration (#1911).
+        """
+        # (maxMessagePayloadSize, advertised length exponent, enforced cap)
+        cases = [
+            (512, 0, 512),
+            (1000, 1, 1024),  # rounded up to the next power of two
+            (1024, 1, 1024),
+            (4096, 3, 4096),
+            (2**20, 11, 2**20),
+            (2**24, 15, 2**24),
+        ]
+        for max_size, exp, cap in cases:
+            with self.subTest(max_size=max_size):
+                sf = WampRawSocketServerFactory(lambda: Mock())
+                sf.setProtocolOptions(maxMessagePayloadSize=max_size)
+                sp = sf.buildProtocol(None)
+                sp.transport = FakeTransport()
+                sp.connectionMade()
+                ser_id = sorted(sf._serializers.keys())[0]
+                # client opening handshake: magic, (length-exp 15 | serializer)
+                sp.dataReceived(bytes([0x7F, 0xF0 | ser_id, 0, 0]))
+                written = sp.transport._written
+                self.assertEqual(written[1] >> 4, exp)
+                self.assertEqual(sp.MAX_LENGTH, cap)
+
     def test_server_bad_magic_byte_aborts_cleanly(self):
         """
         A server receiving an invalid magic byte in the opening handshake

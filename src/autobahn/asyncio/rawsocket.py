@@ -477,6 +477,40 @@ class WampRawSocketFactory:
 
     log = txaio.make_logger()
 
+    # RawSocket max payload size is 16M
+    # (https://wamp-proto.org/_static/gen/wamp_latest_ietf.html#handshake)
+    _max_message_size = 2**24
+
+    def resetProtocolOptions(self):
+        self._max_message_size = 2**24
+
+    def setProtocolOptions(self, maxMessagePayloadSize=None):
+        """
+        Set RawSocket protocol options. Mirrors the Twisted RawSocket factory so
+        the same ``maxMessagePayloadSize`` knob configures the receive size limit
+        on both backends.
+
+        :param maxMessagePayloadSize: Maximum length (in octets) of a received
+            RawSocket message, in ``[512, 2**24]``; rounded up to the next power
+            of two for the advertised handshake length exponent. ``None`` leaves
+            the current value unchanged (default ``2**24`` = 16 MB).
+        """
+        self.log.debug(
+            "{klass}.setProtocolOptions(maxMessagePayloadSize={maxMessagePayloadSize})",
+            klass=self.__class__.__name__,
+            maxMessagePayloadSize=maxMessagePayloadSize,
+        )
+        assert maxMessagePayloadSize is None or (
+            isinstance(maxMessagePayloadSize, int)
+            and maxMessagePayloadSize >= 512
+            and maxMessagePayloadSize <= 2**24
+        )
+        if (
+            maxMessagePayloadSize is not None
+            and maxMessagePayloadSize != self._max_message_size
+        ):
+            self._max_message_size = maxMessagePayloadSize
+
     @public
     def __call__(self):
         proto = self.protocol()
