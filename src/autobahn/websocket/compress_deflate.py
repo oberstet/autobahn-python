@@ -816,27 +816,37 @@ class PerMessageDeflate(PerMessageCompress, PerMessageDeflateMixin):
 
         self._decompress_message_size = 0
 
-    def decompress_message_data(self, data):
-        if self.max_message_size is None:
+    def decompress_message_data(self, data, max_output_len=None):
+        # The output is bounded by the smaller of two optional caps: the
+        # extension-level max_message_size (negotiated, cumulative across all
+        # frames of the message) and the per-call max_output_len (the remaining
+        # protocol-level budget). If neither is set, decompression is unbounded.
+        limits = []
+        if self.max_message_size is not None:
+            limits.append(self.max_message_size - self._decompress_message_size)
+        if max_output_len is not None:
+            limits.append(max_output_len)
+        if not limits:
             return self._decompressor.decompress(data)
 
-        # Cap output at the remaining message budget. zlib treats a max_length
+        # Cap output at the tighter remaining budget. zlib treats a max_length
         # of 0 as "unlimited", so once the budget is exhausted we cap the next
         # call at 1 byte: any further real output then lands in unconsumed_tail
         # and triggers the clean rejection below.
-        remaining = self.max_message_size - self._decompress_message_size
-        data = self._decompressor.decompress(data, remaining if remaining > 0 else 1)
+        limit = min(limits)
+        data = self._decompressor.decompress(data, limit if limit > 0 else 1)
         self._decompress_message_size += len(data)
 
         # A non-empty unconsumed_tail means more output was available than the
-        # (cumulative) budget allowed, i.e. the message exceeds max_message_size.
-        # Reject cleanly instead of silently truncating - truncation both drops
-        # application data and corrupts the deflate stream, so the subsequent
+        # budget allowed, i.e. the message exceeds the limit. Reject cleanly
+        # instead of silently truncating - truncation both drops application
+        # data and corrupts the deflate stream, so the subsequent
         # end_decompress_message() would raise "zlib error -3" on the trailer.
         if self._decompressor.unconsumed_tail:
             raise PayloadExceededError(
-                "WebSocket message exceeds configured max_message_size of "
-                f"{self.max_message_size} octets"
+                "WebSocket message exceeds decompression limit "
+                f"(max_message_size={self.max_message_size}, "
+                f"max_output_len={max_output_len})"
             )
         return data
 

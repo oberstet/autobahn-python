@@ -1857,8 +1857,36 @@ class WebSocketProtocol(ObservableMixin):
                     octets=_LazyHexFormatter(payload),
                 )
 
-                # XXX oberstet
-                payload = self._perMessageCompress.decompress_message_data(payload)
+                # Bound inflation by the remaining uncompressed message budget.
+                # onMessageFrameBegin() already added this frame's COMPRESSED
+                # length to message_data_total_length, so subtracting it back
+                # out yields the uncompressed total of the preceding frames; the
+                # remainder up to maxMessagePayloadSize is what this frame may
+                # inflate to. Passing it as max_output_len lets backends with an
+                # incremental cap (deflate, bzip2) stop inflating at the limit
+                # instead of expanding the whole frame into memory first. A
+                # PayloadExceededError means the message exceeds the limit; the
+                # post-inflation check below is the backstop for backends that
+                # can only bound per-frame (snappy, brotli).
+                if self.maxMessagePayloadSize > 0:
+                    max_output_len = self.maxMessagePayloadSize - (
+                        self.message_data_total_length - compressedLen
+                    )
+                else:
+                    max_output_len = None
+                try:
+                    payload = self._perMessageCompress.decompress_message_data(
+                        payload, max_output_len=max_output_len
+                    )
+                except PayloadExceededError:
+                    if not self.failedByMe:
+                        self.wasMaxMessagePayloadSizeExceeded = True
+                        self._max_message_size_exceeded(
+                            self.maxMessagePayloadSize,
+                            self.maxMessagePayloadSize,
+                            f"received WebSocket message exceeds payload limit of {self.maxMessagePayloadSize} octets after decompression",
+                        )
+                    return False
                 uncompressedLen = len(payload)
             else:
                 l = len(payload)

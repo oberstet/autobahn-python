@@ -26,6 +26,7 @@
 
 import bz2
 
+from autobahn.exception import PayloadExceededError
 from autobahn.websocket.compress_base import (
     PerMessageCompress,
     PerMessageCompressOffer,
@@ -522,8 +523,22 @@ class PerMessageBzip2(PerMessageCompress, PerMessageBzip2Mixin):
         if self._decompressor is None:
             self._decompressor = bz2.BZ2Decompressor()
 
-    def decompress_message_data(self, data):
-        return self._decompressor.decompress(data)
+    def decompress_message_data(self, data, max_output_len=None):
+        if max_output_len is None:
+            return self._decompressor.decompress(data)
+        # BZ2Decompressor.decompress(data, max_length) returns at most
+        # max_length bytes and buffers any excess internally. Cap at one octet
+        # over the budget: if that yields more than max_output_len octets the
+        # message is over budget and is rejected (matching deflate's
+        # strictly-greater boundary). (needs_input is unreliable here - it also
+        # goes False at end-of-stream, i.e. for an under-budget message.)
+        data = self._decompressor.decompress(data, max(max_output_len, 0) + 1)
+        if len(data) > max_output_len:
+            raise PayloadExceededError(
+                "WebSocket message exceeds decompression limit of "
+                f"{max_output_len} octets"
+            )
+        return data
 
     def end_decompress_message(self):
         self._decompressor = None

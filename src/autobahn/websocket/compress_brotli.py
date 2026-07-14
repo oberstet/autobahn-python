@@ -31,6 +31,7 @@ try:
 except ImportError:
     import brotlicffi as brotli
 
+from autobahn.exception import PayloadExceededError
 from autobahn.websocket.compress_base import (
     PerMessageCompress,
     PerMessageCompressOffer,
@@ -483,8 +484,19 @@ class PerMessageBrotli(PerMessageCompress, PerMessageBrotliMixin):
             if self._decompressor is None or self.server_no_context_takeover:
                 self._decompressor = brotli.Decompressor()
 
-    def decompress_message_data(self, data):
-        return self._decompressor.process(data)
+    def decompress_message_data(self, data, max_output_len=None):
+        # brotli's Decompressor.process() has no output-length argument, so the
+        # frame is decompressed in full (bounded on the wire by
+        # maxFramePayloadSize) and then checked. This is a weaker,
+        # per-frame-granular guarantee than the incremental cap deflate/bzip2
+        # provide, but it still rejects an over-budget message cleanly.
+        data = self._decompressor.process(data)
+        if max_output_len is not None and len(data) > max_output_len:
+            raise PayloadExceededError(
+                "WebSocket message exceeds decompression limit of "
+                f"{max_output_len} octets"
+            )
+        return data
 
     def end_decompress_message(self):
         pass
