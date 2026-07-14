@@ -816,7 +816,7 @@ class PerMessageDeflate(PerMessageCompress, PerMessageDeflateMixin):
 
         self._decompress_message_size = 0
 
-    def decompress_message_data(self, data):
+    def decompress_message_data(self, data, max_output_len=None):
         if self.max_message_size is None:
             return self._decompressor.decompress(data)
 

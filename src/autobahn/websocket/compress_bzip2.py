@@ -522,7 +522,7 @@ class PerMessageBzip2(PerMessageCompress, PerMessageBzip2Mixin):
         if self._decompressor is None:
             self._decompressor = bz2.BZ2Decompressor()
 
-    def decompress_message_data(self, data):
+    def decompress_message_data(self, data, max_output_len=None):
         return self._decompressor.decompress(data)
 
     def end_decompress_message(self):

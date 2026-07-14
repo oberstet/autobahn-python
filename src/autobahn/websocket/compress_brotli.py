@@ -483,7 +483,7 @@ class PerMessageBrotli(PerMessageCompress, PerMessageBrotliMixin):
             if self._decompressor is None or self.server_no_context_takeover:
                 self._decompressor = brotli.Decompressor()
 
-    def decompress_message_data(self, data):
+    def decompress_message_data(self, data, max_output_len=None):
         return self._decompressor.process(data)
 
     def end_decompress_message(self):

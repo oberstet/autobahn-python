@@ -478,7 +478,7 @@ class PerMessageSnappy(PerMessageCompress, PerMessageSnappyMixin):
             if self._decompressor is None or self.server_no_context_takeover:
                 self._decompressor = snappy.StreamDecompressor()
 
-    def decompress_message_data(self, data):
+    def decompress_message_data(self, data, max_output_len=None):
         return self._decompressor.decompress(data)
 
     def end_decompress_message(self):
