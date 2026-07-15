@@ -150,7 +150,7 @@ Changelog
 * Use sudo chown to fix wstest directory permissions
 * Fix permissions on wstest directories before artifact upload
 * Fix multi-path artifact upload for verified action
-* Replace actions/*-artifact@v4 with verified actions
+* Replace ``actions/*-artifact@v4`` with verified actions
 * Fix GitHub Discussions category for CI-CD notifications
 * Add automatic GitHub Discussions post for stable releases
 * Add check-release-fileset action to release workflows
