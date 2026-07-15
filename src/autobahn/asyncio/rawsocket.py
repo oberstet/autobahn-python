@@ -177,16 +177,22 @@ class PrefixProtocol(asyncio.Protocol):
 
 class RawSocketProtocol(PrefixProtocol):
     def __init__(self):
-        max_size = None
-        if max_size:
-            exp = int(math.ceil(math.log(max_size, 2))) - 9
-            if exp > 15:
-                raise ValueError("Maximum length is 16M")
-            self.max_length = 2 ** (exp + 9)
-            self._length_exp = exp
-        else:
-            self._length_exp = 15
-            self.max_length = 2**24
+        # Default receive cap: 16 MB (length exponent 15). The factory overrides
+        # this from setProtocolOptions(maxMessagePayloadSize=...) via
+        # _set_max_message_size() when the protocol is built.
+        self._length_exp = 15
+        self.max_length = 2**24
+
+    def _set_max_message_size(self, max_size):
+        # Round the configured max up to the next power of two and derive the
+        # advertised handshake length exponent (the peer is asked to send
+        # messages of at most 2 ** (9 + exp) octets), mirroring the Twisted
+        # backend so both enforce and advertise the same receive cap.
+        exp = int(math.ceil(math.log(max_size, 2))) - 9
+        if exp < 0 or exp > 15:
+            raise ValueError("maxMessagePayloadSize must be in [512, 2 ** 24]")
+        self._length_exp = exp
+        self.max_length = 2 ** (exp + 9)
 
     def connection_made(self, transport):
         PrefixProtocol.connection_made(self, transport)
@@ -477,10 +483,45 @@ class WampRawSocketFactory:
 
     log = txaio.make_logger()
 
+    # RawSocket max payload size is 16M
+    # (https://wamp-proto.org/_static/gen/wamp_latest_ietf.html#handshake)
+    _max_message_size = 2**24
+
+    def resetProtocolOptions(self):
+        self._max_message_size = 2**24
+
+    def setProtocolOptions(self, maxMessagePayloadSize=None):
+        """
+        Set RawSocket protocol options. Mirrors the Twisted RawSocket factory so
+        the same ``maxMessagePayloadSize`` knob configures the receive size limit
+        on both backends.
+
+        :param maxMessagePayloadSize: Maximum length (in octets) of a received
+            RawSocket message, in ``[512, 2**24]``; rounded up to the next power
+            of two for the advertised handshake length exponent. ``None`` leaves
+            the current value unchanged (default ``2**24`` = 16 MB).
+        """
+        self.log.debug(
+            "{klass}.setProtocolOptions(maxMessagePayloadSize={maxMessagePayloadSize})",
+            klass=self.__class__.__name__,
+            maxMessagePayloadSize=maxMessagePayloadSize,
+        )
+        assert maxMessagePayloadSize is None or (
+            isinstance(maxMessagePayloadSize, int)
+            and maxMessagePayloadSize >= 512
+            and maxMessagePayloadSize <= 2**24
+        )
+        if (
+            maxMessagePayloadSize is not None
+            and maxMessagePayloadSize != self._max_message_size
+        ):
+            self._max_message_size = maxMessagePayloadSize
+
     @public
     def __call__(self):
         proto = self.protocol()
         proto.factory = self
+        proto._set_max_message_size(self._max_message_size)
         return proto
 
 

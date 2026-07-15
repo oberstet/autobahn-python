@@ -309,3 +309,62 @@ def test_wamp_client_bad_magic_byte_aborts_cleanly():
 
     transport.close.assert_called_once_with()
     client.onOpen.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Issue #1911: the asyncio RawSocket receive size limit must be configurable via
+# the factory's setProtocolOptions(maxMessagePayloadSize=...), at parity with the
+# Twisted backend. Both round the configured max up to the next power of two for
+# the advertised handshake length exponent and the enforced receive cap. Parity
+# is asserted against the same formula in the Twisted suite
+# (test_tx_rawsocket.py), because the two backends cannot be imported into one
+# process (autobahn.twisted forces txaio.use_twisted).
+
+# (maxMessagePayloadSize, advertised length exponent, enforced receive cap)
+RECV_LIMIT_CASES = [
+    (512, 0, 512),
+    (1000, 1, 1024),  # rounded up to the next power of two
+    (1024, 1, 1024),
+    (4096, 3, 4096),
+    (2**20, 11, 2**20),
+    (2**24, 15, 2**24),
+]
+
+
+def _make_configured_server(max_size):
+    transport = Mock(spec_set=("abort", "close", "write", "get_extra_info"))
+    messages = []
+    transport.write = Mock(side_effect=lambda m: messages.append(m))
+    session = Mock(spec=["onOpen", "onMessage"])
+    factory = WampRawSocketServerFactory(lambda: session)
+    factory.setProtocolOptions(maxMessagePayloadSize=max_size)
+    proto = factory()
+    proto.connection_made(transport)
+    ser_id = sorted(proto.factory._serializers.keys())[0]
+    # client opening handshake: magic, (length-exp 15 | serializer id), 0, 0
+    proto.data_received(bytes(bytearray([0x7F, 0xF0 | ser_id, 0, 0])))
+    return proto, transport, messages
+
+
+@pytest.mark.skipif(
+    not os.environ.get("USE_ASYNCIO", False), reason="test runs on asyncio only"
+)
+@pytest.mark.parametrize("max_size,exp,cap", RECV_LIMIT_CASES)
+def test_server_receive_limit_advertised_and_enforced(max_size, exp, cap):
+    proto, transport, messages = _make_configured_server(max_size)
+    # the server handshake reply advertises the configured length exponent
+    reply = messages[0]
+    assert reply[1] >> 4 == exp
+    # and the enforced receive cap reflects the configured max
+    assert proto.max_length == cap
+
+
+@pytest.mark.skipif(
+    not os.environ.get("USE_ASYNCIO", False), reason="test runs on asyncio only"
+)
+def test_server_receive_limit_rejects_oversized_frame():
+    # configure a 1024-octet receive cap; a frame declaring 2000 octets (over the
+    # configured cap but under the hardwired 16 MB default) must be rejected.
+    proto, transport, messages = _make_configured_server(1024)
+    proto.data_received(b"\x00" + (2000).to_bytes(3, "big"))
+    assert transport.close.called
