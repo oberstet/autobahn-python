@@ -66,13 +66,14 @@ jobs:
           # I. GitHub's runner availability is... "special":
           #
           # ✅ ALWAYS AVAILABLE (Fast, < 30 seconds):
-          #   - ubuntu-* (x86_64)     → Abundant, instant
-          #   - windows-* (x86_64)    → Reliable, quick
-          #   - macos-15 (ARM64)      → Apple Silicon, readily available
+          #   - ubuntu-* (x86_64)      → Abundant, instant
+          #   - windows-* (x86_64)     → Reliable, quick
+          #   - windows-11-arm (ARM64) → Smaller pool but still available
+          #   - macos-15 (ARM64)       → Apple Silicon, readily available
           #
           # 🕐 "PLEASE WAIT FOREVER" ZONE (Often > 1 hour waits):
-          #   - ubuntu-*-arm64        → Limited pool, beta status
-          #   - macos-12/13 (Intel)   → Legacy hardware, being phased out
+          #   - ubuntu-*-arm64         → Limited pool, beta status
+          #   - macos-12/13 (Intel)    → Legacy hardware, being phased out
           #
           # WHY THIS HAPPENS:
           # 1. GitHub prioritizes current hardware (ARM64 macOS > Intel macOS)
@@ -102,6 +103,11 @@ jobs:
             platform: windows
             arch: x86_64
 
+          # --- Windows ---
+          - os: windows-11-arm # ✅ GitHub-hosted Windows ARM64 (mostly fast)
+            platform: windows
+            arch: arm64
+
           # --- Linux ---
           # - os: ubuntu-24.04-arm64 # 🕐 Linux ARM64 (servers/edge, often waits forever)
           #   platform: linux
@@ -111,12 +117,6 @@ jobs:
           # - os: macos-12 # 🕐 Intel macOS (legacy users, increasingly scarce, often waits forever)
           #   platform: macos
           #   arch: x86_64
-
-          # --- Windows ---
-          # ⚠️ GitHub does NOT provide Windows ARM64 hosted runners.
-          #    If you want Windows ARM64 builds, you must either:
-          #      - run a self-hosted Windows ARM64 runner, OR
-          #      - cross-compile from AMD64 to ARM64 inside the workflow.
 
     steps:
       - name: Checkout code
@@ -152,11 +152,11 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       # we need to use this install wrapper on inheritently broken platforms (windows/powershell).
+      # Unpinned, like the Linux/macOS path.
       - name: Install uv (Windows)
         if: runner.os == 'Windows'
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v10.0.1
         with:
-          version: "0.7.19"
           enable-cache: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -495,6 +495,24 @@ jobs:
           just build-all
         shell: pwsh
 
+      - name: Verify wheel platform tags (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          $expectedTag = if ('${{ matrix.arch }}' -eq 'arm64') { 'win_arm64' } else { 'win_amd64' }
+          $wheels = Get-ChildItem dist\*.whl
+          if ($wheels.Count -eq 0) {
+            Write-Host "::error::no wheels were produced in dist/"
+            exit 1
+          }
+          $bad = $wheels | Where-Object { $_.Name -notmatch $expectedTag }
+          if ($bad) {
+            Write-Host "::error::wheels do not carry the expected '$expectedTag' platform tag:"
+            $bad | ForEach-Object { Write-Host "  $($_.Name)" }
+            exit 1
+          }
+          Write-Host "OK: all $($wheels.Count) wheel(s) tagged '$expectedTag'"
+        shell: pwsh
+
       - name: Validate wheels integrity (Windows only)
         if: matrix.platform == 'windows'
         run: |
@@ -512,7 +530,7 @@ jobs:
           "=========================================================" | Out-File -FilePath $validationFile -Append -Encoding UTF8
           "" | Out-File -FilePath $validationFile -Append -Encoding UTF8
           "Validation Date: $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss UTC'))" | Out-File -FilePath $validationFile -Append -Encoding UTF8
-          "Platform: Windows x86_64 (binary with NVX)" | Out-File -FilePath $validationFile -Append -Encoding UTF8
+          "Platform: Windows ${{ matrix.arch }} (binary with NVX)" | Out-File -FilePath $validationFile -Append -Encoding UTF8
           "Python: $(python --version)" | Out-File -FilePath $validationFile -Append -Encoding UTF8
           "twine: $(twine --version)" | Out-File -FilePath $validationFile -Append -Encoding UTF8
           "" | Out-File -FilePath $validationFile -Append -Encoding UTF8

@@ -23,6 +23,7 @@ jobs:
       # Dynamic artifact names (with meta-checksum suffixes)
       artifact_macos_wheels: ${{ steps.check.outputs.artifact_macos_wheels }}
       artifact_windows_wheels: ${{ steps.check.outputs.artifact_windows_wheels }}
+      artifact_windows_arm64_wheels: ${{ steps.check.outputs.artifact_windows_arm64_wheels }}
       artifact_source_dist: ${{ steps.check.outputs.artifact_source_dist }}
       artifact_linux_no_nvx: ${{ steps.check.outputs.artifact_linux_no_nvx }}
       artifact_manylinux_x86_64: ${{ steps.check.outputs.artifact_manylinux_x86_64 }}
@@ -139,6 +140,7 @@ jobs:
               const wheelsRunId = latestRuns['wheels']?.id;
               core.setOutput('artifact_macos_wheels', await findArtifact(wheelsRunId, 'wheels-macos-arm64'));
               core.setOutput('artifact_windows_wheels', await findArtifact(wheelsRunId, 'wheels-windows-x86_64'));
+              core.setOutput('artifact_windows_arm64_wheels', await findArtifact(wheelsRunId, 'wheels-windows-arm64'));
               core.setOutput('artifact_source_dist', await findArtifact(wheelsRunId, 'source-distribution'));
               core.setOutput('artifact_linux_no_nvx', await findArtifact(wheelsRunId, 'linux-wheels-no-nvx'));
 
@@ -208,10 +210,21 @@ jobs:
           retry-delay: 30
         continue-on-error: true
 
-      - name: Download and verify Windows wheels with retry logic
+      - name: Download and verify Windows x86_64 wheels with retry logic
         uses: wamp-proto/wamp-cicd/actions/download-artifact-verified@main
         with:
           name: ${{ needs.check-all-workflows.outputs.artifact_windows_wheels }}
+          path: ${{ github.workspace }}/dist/
+          run-id: ${{ needs.check-all-workflows.outputs.wheels_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          max-attempts: 5
+          retry-delay: 30
+        continue-on-error: true
+
+      - name: Download and verify Windows ARM64 wheels with retry logic
+        uses: wamp-proto/wamp-cicd/actions/download-artifact-verified@main
+        with:
+          name: ${{ needs.check-all-workflows.outputs.artifact_windows_arm64_wheels }}
           path: ${{ github.workspace }}/dist/
           run-id: ${{ needs.check-all-workflows.outputs.wheels_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -910,24 +923,28 @@ jobs:
             cpy311-linux-x86_64-musllinux_1_2
             cpy311-linux-aarch64-musllinux_1_2
             cpy311-win-amd64
+            cpy311-win-arm64
             cpy312-macos-arm64
             cpy312-linux-x86_64-manylinux_2_28
             cpy312-linux-aarch64-manylinux_2_28
             cpy312-linux-x86_64-musllinux_1_2
             cpy312-linux-aarch64-musllinux_1_2
             cpy312-win-amd64
+            cpy312-win-arm64
             cpy313-macos-arm64
             cpy313-linux-x86_64-manylinux_2_28
             cpy313-linux-aarch64-manylinux_2_28
             cpy313-linux-x86_64-musllinux_1_2
             cpy313-linux-aarch64-musllinux_1_2
             cpy313-win-amd64
+            cpy313-win-arm64
             cpy314-macos-arm64
             cpy314-linux-x86_64-manylinux_2_28
             cpy314-linux-aarch64-manylinux_2_28
             cpy314-linux-x86_64-musllinux_1_2
             cpy314-linux-aarch64-musllinux_1_2
             cpy314-win-amd64
+            cpy314-win-arm64
             pypy311-macos-arm64
             pypy311-linux-x86_64-manylinux_2_28
             pypy311-linux-aarch64-manylinux_2_17
@@ -1126,10 +1143,21 @@ jobs:
           retry-delay: 30
         continue-on-error: true
 
-      - name: Download and verify Windows wheels with retry logic
+      - name: Download and verify Windows x86_64 wheels with retry logic
         uses: wamp-proto/wamp-cicd/actions/download-artifact-verified@main
         with:
           name: ${{ needs.check-all-workflows.outputs.artifact_windows_wheels }}
+          path: ${{ github.workspace }}/dist/
+          run-id: ${{ needs.check-all-workflows.outputs.wheels_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          max-attempts: 5
+          retry-delay: 30
+        continue-on-error: true
+
+      - name: Download and verify Windows ARM64 wheels with retry logic
+        uses: wamp-proto/wamp-cicd/actions/download-artifact-verified@main
+        with:
+          name: ${{ needs.check-all-workflows.outputs.artifact_windows_arm64_wheels }}
           path: ${{ github.workspace }}/dist/
           run-id: ${{ needs.check-all-workflows.outputs.wheels_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -1828,24 +1856,28 @@ jobs:
             cpy311-linux-x86_64-musllinux_1_2
             cpy311-linux-aarch64-musllinux_1_2
             cpy311-win-amd64
+            cpy311-win-arm64
             cpy312-macos-arm64
             cpy312-linux-x86_64-manylinux_2_28
             cpy312-linux-aarch64-manylinux_2_28
             cpy312-linux-x86_64-musllinux_1_2
             cpy312-linux-aarch64-musllinux_1_2
             cpy312-win-amd64
+            cpy312-win-arm64
             cpy313-macos-arm64
             cpy313-linux-x86_64-manylinux_2_28
             cpy313-linux-aarch64-manylinux_2_28
             cpy313-linux-x86_64-musllinux_1_2
             cpy313-linux-aarch64-musllinux_1_2
             cpy313-win-amd64
+            cpy313-win-arm64
             cpy314-macos-arm64
             cpy314-linux-x86_64-manylinux_2_28
             cpy314-linux-aarch64-manylinux_2_28
             cpy314-linux-x86_64-musllinux_1_2
             cpy314-linux-aarch64-musllinux_1_2
             cpy314-win-amd64
+            cpy314-win-arm64
             pypy311-macos-arm64
             pypy311-linux-x86_64-manylinux_2_28
             pypy311-linux-aarch64-manylinux_2_17
@@ -2064,10 +2096,21 @@ jobs:
           retry-delay: 30
         continue-on-error: true
 
-      - name: Download and verify Windows wheels with retry logic
+      - name: Download and verify Windows x86_64 wheels with retry logic
         uses: wamp-proto/wamp-cicd/actions/download-artifact-verified@main
         with:
           name: ${{ needs.check-all-workflows.outputs.artifact_windows_wheels }}
+          path: ${{ github.workspace }}/dist/
+          run-id: ${{ needs.check-all-workflows.outputs.wheels_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          max-attempts: 5
+          retry-delay: 30
+        continue-on-error: true
+
+      - name: Download and verify Windows ARM64 wheels with retry logic
+        uses: wamp-proto/wamp-cicd/actions/download-artifact-verified@main
+        with:
+          name: ${{ needs.check-all-workflows.outputs.artifact_windows_arm64_wheels }}
           path: ${{ github.workspace }}/dist/
           run-id: ${{ needs.check-all-workflows.outputs.wheels_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -2537,24 +2580,28 @@ jobs:
             cpy311-linux-x86_64-musllinux_1_2
             cpy311-linux-aarch64-musllinux_1_2
             cpy311-win-amd64
+            cpy311-win-arm64
             cpy312-macos-arm64
             cpy312-linux-x86_64-manylinux_2_28
             cpy312-linux-aarch64-manylinux_2_28
             cpy312-linux-x86_64-musllinux_1_2
             cpy312-linux-aarch64-musllinux_1_2
             cpy312-win-amd64
+            cpy312-win-arm64
             cpy313-macos-arm64
             cpy313-linux-x86_64-manylinux_2_28
             cpy313-linux-aarch64-manylinux_2_28
             cpy313-linux-x86_64-musllinux_1_2
             cpy313-linux-aarch64-musllinux_1_2
             cpy313-win-amd64
+            cpy313-win-arm64
             cpy314-macos-arm64
             cpy314-linux-x86_64-manylinux_2_28
             cpy314-linux-aarch64-manylinux_2_28
             cpy314-linux-x86_64-musllinux_1_2
             cpy314-linux-aarch64-musllinux_1_2
             cpy314-win-amd64
+            cpy314-win-arm64
             pypy311-macos-arm64
             pypy311-linux-x86_64-manylinux_2_28
             pypy311-linux-aarch64-manylinux_2_17

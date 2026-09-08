@@ -69,7 +69,8 @@ AUTOBAHN_TESTSUITE_CONFIG_DIR := justfile_directory() / 'wstest'
 VENV_DIR := PROJECT_DIR / '.venvs'
 
 # Define a justfile-local variable for our environments.
-ENVS := 'cpy314 cpy313 cpy312 cpy311 pypy311'
+# PyPy publishes no Windows ARM64 interpreter, so win_arm64 is CPython-only.
+ENVS := if os() + "-" + arch() == "windows-aarch64" { 'cpy314 cpy313 cpy312 cpy311' } else { 'cpy314 cpy313 cpy312 cpy311 pypy311' }
 
 # Package version files, kept in sync (CalVer YY.M.PATCH[.devN], PEP 440).
 PY_VERSION_FILE := 'src/autobahn/_version.py'
