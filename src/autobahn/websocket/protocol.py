@@ -3475,19 +3475,11 @@ class WebSocketServerProtocol(WebSocketProtocol):
 
         # end of HTTP response headers
         response += "\x0d\x0a"
-        response_body = None
 
         # send out opening handshake response
         #
         self.log.debug("sending HTTP response:\n\n{response}", response=response)
         self.sendData(response.encode("utf8"))
-
-        if response_body:
-            self.log.debug(
-                "sending HTTP response body:\n\n{octets}",
-                octets=_LazyHexFormatter(response_body),
-            )
-            self.sendData(response_body)
 
         # save response for testsuite
         #
