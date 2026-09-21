@@ -12,15 +12,16 @@ ENV PYPY_DISABLE_JIT=1
 ENV PYPY_GC_NTHREADS=1
 ENV PYPY_FORCE_CPU_COUNT=1
 
-# Install build essentials for wheel compilation
+# Install build essentials for wheel compilation.
+# patchelf is installed via pip (not apt) so it floats together with auditwheel:
+# Debian's apt patchelf can lag auditwheel's required minimum (see issue #1941).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    patchelf \
     libffi-dev \
     libssl-dev \
     libsnappy-dev \
     && pip install --upgrade pip \
-    && pip install auditwheel \
+    && pip install auditwheel patchelf \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /io
