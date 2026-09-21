@@ -44,14 +44,6 @@ from autobahn.wamp.serializer import (
 __all__ = ("Component", "run")
 
 
-def _unique_list(seq):
-    """
-    Return a list with unique elements from sequence, preserving order.
-    """
-    seen = set()
-    return [x for x in seq if x not in seen and not seen.add(x)]
-
-
 def _camel_case_from_snake_case(snake):
     parts = snake.split("_")
     return parts[0] + "".join(s.capitalize() for s in parts[1:])
