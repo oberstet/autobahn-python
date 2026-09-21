@@ -76,16 +76,21 @@ ENVS := if os() + "-" + arch() == "windows-aarch64" { 'cpy314 cpy313 cpy312 cpy3
 PY_VERSION_FILE := 'src/autobahn/_version.py'
 TOML_VERSION_FILE := 'pyproject.toml'
 
+# On Windows ARM64 a bare request like `cpython-3.11` resolves to the *x86_64* build
+# (uv leans on WoA emulation), which then produces win_amd64 wheels on an ARM64 runner.
+# Qualify the request so the aarch64 interpreter is selected.
+PY_PLATFORM_SUFFIX := if os() + "-" + arch() == "windows-aarch64" { '-windows-aarch64-none' } else { '' }
+
 # Internal helper to map Python version short name to full uv version
 _get-spec short_name:
     #!/usr/bin/env bash
     set -e
     case {{short_name}} in
-        cpy314)  echo "cpython-3.14";;  # cpython-3.14.0b3-linux-x86_64-gnu
-        cpy314t) echo "cpython-3.14t";; # CPython 3.14 free-threaded (no-GIL); reserved for #1875 Part 2
-        cpy313)  echo "cpython-3.13";;  # cpython-3.13.5-linux-x86_64-gnu
-        cpy312)  echo "cpython-3.12";;  # cpython-3.12.11-linux-x86_64-gnu
-        cpy311)  echo "cpython-3.11";;  # cpython-3.11.13-linux-x86_64-gnu
+        cpy314)  echo "cpython-3.14{{PY_PLATFORM_SUFFIX}}";;  # cpython-3.14.0b3-linux-x86_64-gnu
+        cpy314t) echo "cpython-3.14t{{PY_PLATFORM_SUFFIX}}";; # CPython 3.14 free-threaded (no-GIL); reserved for #1875 Part 2
+        cpy313)  echo "cpython-3.13{{PY_PLATFORM_SUFFIX}}";;  # cpython-3.13.5-linux-x86_64-gnu
+        cpy312)  echo "cpython-3.12{{PY_PLATFORM_SUFFIX}}";;  # cpython-3.12.11-linux-x86_64-gnu
+        cpy311)  echo "cpython-3.11{{PY_PLATFORM_SUFFIX}}";;  # cpython-3.11.13-linux-x86_64-gnu
         pypy311) echo "pypy-3.11";;     # pypy-3.11.11-linux-x86_64-gnu
         *)       echo "Unknown environment: {{short_name}}" >&2; exit 1;;
     esac
@@ -300,6 +305,27 @@ create venv="":
 
     ${VENV_PYTHON} -V
     ${VENV_PYTHON} -m pip -V
+
+    # Fail fast on an interpreter built for the wrong CPU: every wheel built here would
+    # silently carry that interpreter's platform tag (e.g. win_amd64 on an ARM64 runner).
+    EXPECT_ARCH=$(echo "{{ arch() }}" | sed -e 's/^aarch64$/arm64/' -e 's/^x86_64$/amd64/')
+    ACTUAL_ARCH=$(${VENV_PYTHON} -c "import sysconfig; print(sysconfig.get_platform().rsplit('-', 1)[-1].lower())" \
+        | sed -e 's/^aarch64$/arm64/' -e 's/^x86_64$/amd64/')
+    case "${ACTUAL_ARCH}" in
+        universal|universal2|fat|fat32|fat64|intel|intel64)
+            # macOS fat builds (e.g. the python.org universal2 installer) always contain
+            # the host slice, so there is no arch to mismatch.
+            echo "==> Arch check skipped: '${VENV_NAME}' interpreter is multi-arch (${ACTUAL_ARCH})"
+            ;;
+        "${EXPECT_ARCH}")
+            echo "==> Arch check OK: '${VENV_NAME}' interpreter is ${ACTUAL_ARCH}"
+            ;;
+        *)
+            echo "ERROR: interpreter architecture mismatch for '${VENV_NAME}': got '${ACTUAL_ARCH}', host is '${EXPECT_ARCH}'." >&2
+            echo "       Wheels built here would carry the wrong platform tag. Aborting." >&2
+            exit 1
+            ;;
+    esac
 
     echo "==> Activate Python virtual environment with: source ${VENV_PATH}/bin/activate"
 
