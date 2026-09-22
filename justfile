@@ -79,22 +79,28 @@ AUTOBAHN_TESTSUITE_CONFIG_DIR := justfile_directory() / 'wstest'
 VENV_DIR := PROJECT_DIR / '.venvs'
 
 # Define a justfile-local variable for our environments.
-ENVS := 'cpy314 cpy313 cpy312 cpy311 pypy311'
+# PyPy publishes no Windows ARM64 interpreter, so win_arm64 is CPython-only.
+ENVS := if os() + "-" + arch() == "windows-aarch64" { 'cpy314 cpy313 cpy312 cpy311' } else { 'cpy314 cpy313 cpy312 cpy311 pypy311' }
 
 # Package version files, kept in sync (CalVer YY.M.PATCH[.devN], PEP 440).
 PY_VERSION_FILE := 'src/autobahn/_version.py'
 TOML_VERSION_FILE := 'pyproject.toml'
+
+# On Windows ARM64 a bare request like `cpython-3.11` resolves to the *x86_64* build
+# (uv leans on WoA emulation), which then produces win_amd64 wheels on an ARM64 runner.
+# Qualify the request so the aarch64 interpreter is selected.
+PY_PLATFORM_SUFFIX := if os() + "-" + arch() == "windows-aarch64" { '-windows-aarch64-none' } else { '' }
 
 # Internal helper to map Python version short name to full uv version
 _get-spec short_name:
     #!/usr/bin/env bash
     set -e
     case {{short_name}} in
-        cpy314)  echo "cpython-3.14";;  # cpython-3.14.0b3-linux-x86_64-gnu
-        cpy314t) echo "cpython-3.14t";; # CPython 3.14 free-threaded (no-GIL); reserved for #1875 Part 2
-        cpy313)  echo "cpython-3.13";;  # cpython-3.13.5-linux-x86_64-gnu
-        cpy312)  echo "cpython-3.12";;  # cpython-3.12.11-linux-x86_64-gnu
-        cpy311)  echo "cpython-3.11";;  # cpython-3.11.13-linux-x86_64-gnu
+        cpy314)  echo "cpython-3.14{{PY_PLATFORM_SUFFIX}}";;  # cpython-3.14.0b3-linux-x86_64-gnu
+        cpy314t) echo "cpython-3.14t{{PY_PLATFORM_SUFFIX}}";; # CPython 3.14 free-threaded (no-GIL); reserved for #1875 Part 2
+        cpy313)  echo "cpython-3.13{{PY_PLATFORM_SUFFIX}}";;  # cpython-3.13.5-linux-x86_64-gnu
+        cpy312)  echo "cpython-3.12{{PY_PLATFORM_SUFFIX}}";;  # cpython-3.12.11-linux-x86_64-gnu
+        cpy311)  echo "cpython-3.11{{PY_PLATFORM_SUFFIX}}";;  # cpython-3.11.13-linux-x86_64-gnu
         pypy311) echo "pypy-3.11";;     # pypy-3.11.11-linux-x86_64-gnu
         *)       echo "Unknown environment: {{short_name}}" >&2; exit 1;;
     esac
@@ -121,6 +127,48 @@ _check-venv-abi venv:
         exit 1
     fi
     echo "==> ABI check OK: '${VENV_NAME}' interpreter free-threaded=${ACTUAL_FT} (expected ${EXPECT_FT})"
+
+# Assert the venv interpreter was built for the expected CPU. Defaults to the host CPU
+# (just's arch(), which is native so it is not fooled by emulation); pass `expect` to
+# check against an external expectation instead, e.g. a CI matrix arch -- that also
+# catches "we did not get the runner we asked for".
+#
+# Deliberately uses sysconfig.get_platform(), the value that determines the wheel tag.
+# platform.machine() must NOT be used: on Windows it reports the *host CPU* (via a WMI
+# query on 3.12+), so an emulated x86_64 interpreter on an ARM64 box still reports
+# "ARM64" and the mismatch would slip through.
+_check-venv-arch venv expect="":
+    #!/usr/bin/env bash
+    set -e
+    VENV_NAME="{{ venv }}"
+    VENV_PYTHON=$(just --quiet _get-venv-python "${VENV_NAME}")
+
+    _norm() { echo "$1" | tr 'A-Z' 'a-z' | sed -e 's/^aarch64$/arm64/' -e 's/^x86_64$/amd64/'; }
+
+    if [ -n "{{ expect }}" ]; then
+        EXPECT_ARCH=$(_norm "{{ expect }}")
+    else
+        EXPECT_ARCH=$(_norm "{{ arch() }}")
+    fi
+    ACTUAL_ARCH=$(_norm "$(${VENV_PYTHON} -c "import sysconfig; print(sysconfig.get_platform().rsplit('-', 1)[-1])")")
+
+    ${VENV_PYTHON} -c 'import platform, sysconfig; print("    python                   =", platform.python_implementation(), platform.python_version()); print("    sysconfig.get_platform() =", sysconfig.get_platform()); print("    EXT_SUFFIX               =", sysconfig.get_config_var("EXT_SUFFIX")); print("    platform.machine()       =", platform.machine(), "(host CPU, not the interpreter)")'
+
+    case "${ACTUAL_ARCH}" in
+        universal|universal2|fat|fat32|fat64|intel|intel64)
+            # macOS fat builds (e.g. the python.org universal2 installer) always contain
+            # the host slice, so there is no arch to mismatch.
+            echo "==> Arch check skipped: '${VENV_NAME}' interpreter is multi-arch (${ACTUAL_ARCH})"
+            ;;
+        "${EXPECT_ARCH}")
+            echo "==> Arch check OK: '${VENV_NAME}' interpreter is ${ACTUAL_ARCH} (expected ${EXPECT_ARCH})"
+            ;;
+        *)
+            echo "ERROR: interpreter architecture mismatch for '${VENV_NAME}': got '${ACTUAL_ARCH}', expected '${EXPECT_ARCH}'." >&2
+            echo "       Wheels built or tested here would carry the wrong platform tag. Aborting." >&2
+            exit 1
+            ;;
+    esac
 
 # uv python install pypy-3.11-linux-aarch64-gnu --preview --verbose
 # file /home/oberstet/.local/share/uv/python/pypy-3.11.11-linux-aarch64-gnu/bin/pypy3.11
@@ -309,6 +357,10 @@ create venv="":
 
     ${VENV_PYTHON} -V
     ${VENV_PYTHON} -m pip -V
+
+    # Fail fast on an interpreter built for the wrong CPU: every wheel built here would
+    # silently carry that interpreter's platform tag (e.g. win_amd64 on an ARM64 runner).
+    just _check-venv-arch "${VENV_NAME}"
 
     echo "==> Activate Python virtual environment with: source ${VENV_PATH}/bin/activate"
 
@@ -1415,8 +1467,10 @@ test-bundled-flatc venv="": (install venv)
     echo "========================================================================"
 
 # Test installing and verifying a built wheel (used in CI for artifact verification)
-# Usage: just test-wheel-install /path/to/autobahn-*.whl
-test-wheel-install wheel_path:
+# Usage: just test-wheel-install dist/autobahn-*.whl [expect_nvx] [expect_arch]
+#   expect_nvx  - "1"/"0" to assert NVX is (not) active in the installed wheel
+#   expect_arch - e.g. "arm64"/"x86_64" to assert the interpreter CPU (CI matrix arch)
+test-wheel-install wheel_path expect_nvx="" expect_arch="":
     #!/usr/bin/env bash
     set -e
     WHEEL_PATH="{{ wheel_path }}"
@@ -1434,45 +1488,33 @@ test-wheel-install wheel_path:
     echo "Wheel: ${WHEEL_NAME}"
     echo ""
 
-    # Create ephemeral venv name based on wheel
+    # Map the wheel's python tag to one of our env short names, then reuse _get-spec so
+    # the interpreter request is identical to the one that built it -- including the
+    # platform qualifier that keeps Windows ARM64 off the emulated x86_64 build.
+    # Wheel format: {name}-{version}-{python tag}-{abi tag}-{platform tag}.whl
+    PYTAG=$(echo "${WHEEL_NAME}" | cut -d- -f3)
+    case "${PYTAG}" in
+        cp3*) ENV_NAME="cpy${PYTAG#cp}" ;;
+        pp3*) ENV_NAME="pypy${PYTAG#pp}" ;;
+        py3)  ENV_NAME=$(echo {{ENVS}} | awk '{print $1}')   # pure-Python: any env will do
+              echo "Pure Python wheel, using ${ENV_NAME}" ;;
+        *)    echo "ERROR: cannot map python tag '${PYTAG}' from ${WHEEL_NAME}" >&2; exit 1 ;;
+    esac
+    PYTHON_SPEC=$(just --quiet _get-spec "${ENV_NAME}")
+    echo "Detected ${PYTAG} wheel -> ${ENV_NAME} (${PYTHON_SPEC})"
+
+    # Ephemeral venv, so the wheel is tested against a clean environment: installing
+    # with dependency resolution also proves its requirements are satisfiable here.
     EPHEMERAL_VENV="smoke-wheel-$$"
     EPHEMERAL_PATH="{{ VENV_DIR }}/${EPHEMERAL_VENV}"
-
-    # Extract Python version from wheel filename
-    # Wheel format: {name}-{version}-{python tag}-{abi tag}-{platform tag}.whl
-    # Python tag examples: cp312, cp311, pp311, py3
-    PYTAG=$(echo "${WHEEL_NAME}" | sed -n 's/.*-\(cp[0-9]*\|pp[0-9]*\|py[0-9]*\)-.*/\1/p')
-
-    if [[ "${PYTAG}" =~ ^cp([0-9])([0-9]+)$ ]]; then
-        # CPython wheel (e.g., cp312 -> 3.12)
-        MAJOR="${BASH_REMATCH[1]}"
-        MINOR="${BASH_REMATCH[2]}"
-        PYTHON_SPEC="cpython-${MAJOR}.${MINOR}"
-        echo "Detected CPython ${MAJOR}.${MINOR} wheel"
-    elif [[ "${PYTAG}" =~ ^pp([0-9])([0-9]+)$ ]]; then
-        # PyPy wheel (e.g., pp311 -> pypy-3.11)
-        MAJOR="${BASH_REMATCH[1]}"
-        MINOR="${BASH_REMATCH[2]}"
-        PYTHON_SPEC="pypy-${MAJOR}.${MINOR}"
-        echo "Detected PyPy ${MAJOR}.${MINOR} wheel"
-    elif [[ "${PYTAG}" =~ ^py([0-9])$ ]]; then
-        # Pure Python wheel (e.g., py3) - use system Python
-        SYSTEM_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-        PYTHON_SPEC="cpython-${SYSTEM_VERSION}"
-        echo "Pure Python wheel, using system Python ${SYSTEM_VERSION}"
-    else
-        # Fallback to system Python
-        SYSTEM_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-        PYTHON_SPEC="cpython-${SYSTEM_VERSION}"
-        echo "Could not detect Python version from wheel, using system Python ${SYSTEM_VERSION}"
-    fi
+    trap 'rm -rf "${EPHEMERAL_PATH}"' EXIT
 
     echo "Creating ephemeral venv with ${PYTHON_SPEC}..."
-
     mkdir -p "{{ VENV_DIR }}"
     uv venv --seed --python "${PYTHON_SPEC}" "${EPHEMERAL_PATH}"
+    EPHEMERAL_PYTHON=$(just --quiet _get-venv-python "${EPHEMERAL_VENV}")
 
-    EPHEMERAL_PYTHON="${EPHEMERAL_PATH}/bin/python3"
+    just _check-venv-arch "${EPHEMERAL_VENV}" "{{ expect_arch }}"
 
     # Install the wheel
     echo ""
@@ -1481,17 +1523,32 @@ test-wheel-install wheel_path:
 
     # Run smoke tests
     echo ""
-    VENV_DIR="{{ VENV_DIR }}" just test-smoke "${EPHEMERAL_VENV}"
-
-    # Cleanup
-    echo ""
-    echo "Cleaning up ephemeral venv..."
-    rm -rf "${EPHEMERAL_PATH}"
+    if [ -n "{{ expect_nvx }}" ]; then
+        export AUTOBAHN_EXPECT_NVX="{{ expect_nvx }}"
+        export AUTOBAHN_USE_NVX="{{ expect_nvx }}"
+    fi
+    just test-smoke "${EPHEMERAL_VENV}"
 
     echo ""
     echo "========================================================================"
     echo "WHEEL INSTALL TEST PASSED: ${WHEEL_NAME}"
     echo "========================================================================"
+
+# Install and smoke test every wheel in dist/ (usage: `just test-wheels 1 arm64`)
+test-wheels expect_nvx="" expect_arch="":
+    #!/usr/bin/env bash
+    set -e
+    shopt -s nullglob
+    WHEELS=(dist/*.whl)
+    if [ ${#WHEELS[@]} -eq 0 ]; then
+        echo "ERROR: no wheels found in dist/" >&2
+        exit 1
+    fi
+    for wheel in "${WHEELS[@]}"; do
+        just test-wheel-install "${wheel}" "{{ expect_nvx }}" "{{ expect_arch }}"
+    done
+    echo ""
+    echo "✅ Smoke tested ${#WHEELS[@]} wheel(s)"
 
 # Test installing and verifying a source distribution (used in CI for artifact verification)
 # Usage: just test-sdist-install /path/to/autobahn-*.tar.gz

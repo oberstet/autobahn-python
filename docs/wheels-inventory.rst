@@ -150,6 +150,34 @@ Windows x86_64
      - ``autobahn-{version}-pp311-pypy311_pp73-win_amd64.whl``
      - ✅ Yes (binary)
 
+Windows ARM64
+^^^^^^^^^^^^^
+
+**Binary wheels with NVX acceleration**:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 30 40
+
+   * - Python Version
+     - Wheel Tag Pattern
+     - NVX Acceleration
+   * - CPython 3.11
+     - ``autobahn-{version}-cp311-cp311-win_arm64.whl``
+     - ✅ Yes (binary)
+   * - CPython 3.12
+     - ``autobahn-{version}-cp312-cp312-win_arm64.whl``
+     - ✅ Yes (binary)
+   * - CPython 3.13
+     - ``autobahn-{version}-cp313-cp313-win_arm64.whl``
+     - ✅ Yes (binary)
+   * - CPython 3.14
+     - ``autobahn-{version}-cp314-cp314-win_arm64.whl``
+     - ✅ Yes (binary)
+
+**Note:** There is no PyPy wheel for Windows ARM64: the PyPy project publishes no Windows ARM64
+interpreter.
+
 ARM64 (aarch64) Platforms
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -266,6 +294,7 @@ NVX (Native Vector Extensions) provides hardware-accelerated XOR operations for 
 
 * ✅ macOS ARM64 (all wheels)
 * ✅ Windows x86_64 (all wheels)
+* ✅ Windows ARM64 (all wheels)
 * ✅ Linux ARM64 (all wheels)
 * ❌ Linux x86_64 (pure Python for compatibility)
 
@@ -286,12 +315,18 @@ NVX can be disabled at runtime via environment variable:
 CPU Requirements
 ~~~~~~~~~~~~~~~~
 
-NVX acceleration requires:
+NVX has no special CPU requirement: the C extension is always built, and it
+selects an implementation at run time.
 
-* **x86_64**: AVX2-capable CPU (Intel Haswell/2013+ or AMD Excavator/2015+)
-* **ARM64**: NEON-capable CPU (all modern ARM64 CPUs)
+The SIMD code paths are currently x86-only (SSE2 and SSE4.1) and are compiled in
+only when the toolchain advertises them via ``__SSE2__`` / ``__SSE4_1__``:
 
-If the CPU doesn't support the required instruction set, Autobahn falls back to pure Python implementation automatically.
+* **x86_64 on Linux/macOS**: SIMD paths compiled in (GCC/Clang define these macros)
+* **x86_64 on Windows**: scalar C path (MSVC never defines these macros)
+* **ARM64 (all platforms)**: scalar C path; no ARM NEON implementation exists yet
+
+The scalar C path is still substantially faster than the pure Python fallback,
+which is what is used when the extension is unavailable or ``AUTOBAHN_USE_NVX=0``.
 
 Installation
 ------------
@@ -389,6 +424,7 @@ Common Tags
 * ``musllinux_1_2_aarch64`` - Linux on ARM64 with musl libc 1.2+ (Alpine)
 * ``macosx_15_0_arm64`` - macOS 15+ on Apple Silicon
 * ``win_amd64`` - Windows on x86_64
+* ``win_arm64`` - Windows on ARM64 (Windows on ARM)
 
 Verifying Wheels
 ----------------
@@ -416,11 +452,12 @@ Built on **GitHub-hosted runners** using native compilation:
 * **Linux x86_64**: ubuntu-24.04 runners
 * **macOS ARM64**: macos-15 runners (Apple Silicon)
 * **Windows x86_64**: windows-2022 runners
+* **Windows ARM64**: windows-11-arm runners (native, not emulated)
 
 ARM64 Wheels
 ~~~~~~~~~~~~
 
-Built via **QEMU emulation** on ubuntu-latest runners using Docker containers:
+Linux ARM64 wheels are built via **QEMU emulation** on ubuntu-latest runners using Docker containers:
 
 * **CPython wheels**: Official PyPA manylinux images (quay.io/pypa/manylinux_2_28_aarch64)
 * **PyPy wheels**: Custom Debian-based manylinux images with PyPy pre-installed

@@ -30,6 +30,7 @@ including artifact production and consumption flow.
 │  wheels.yml (native GitHub runners)                                         │
 │  ├── wheels-macos-arm64                (macOS ARM64 wheels)                 │
 │  ├── wheels-windows-x86_64             (Windows x64 wheels)                 │
+│  ├── wheels-windows-arm64              (Windows ARM64 wheels, CPython only) │
 │  ├── linux-wheels-no-nvx               (Linux pure Python wheels)           │
 │  └── source-distribution               (*.tar.gz sdist)                     │
 │                                                                             │
@@ -180,6 +181,7 @@ functionality to wheel installs including the flatc binary.
 | **wstest.yml** | `wstest-results` | WebSocket conformance reports | N/A |
 | **wheels.yml** | `wheels-macos-arm64` | macOS ARM64 wheels (cpy311-314, pypy311) | macOS arm64 |
 | **wheels.yml** | `wheels-windows-x86_64` | Windows x64 wheels (cpy311-314, pypy311) | Windows x86_64 |
+| **wheels.yml** | `wheels-windows-arm64` | Windows ARM64 wheels (cpy311-314, no PyPy) | Windows arm64 |
 | **wheels.yml** | `linux-wheels-no-nvx` | Pure Python wheels (no NVX) | Linux x86_64 |
 | **wheels.yml** | `source-distribution` | `*.tar.gz` sdist | Linux (build host) |
 | **wheels-docker.yml** | `artifacts-manylinux_2_28_x86_64` | Linux x64 wheels (see below) | Linux x86_64 |
@@ -204,6 +206,7 @@ download action. It maps artifact names via the `check-workflows` job outputs:
 |-----------------|-----------------|------------------|
 | `artifact_macos_wheels` | wheels.yml | `wheels-macos-arm64` |
 | `artifact_windows_wheels` | wheels.yml | `wheels-windows-x86_64` |
+| `artifact_windows_arm64_wheels` | wheels.yml | `wheels-windows-arm64` |
 | `artifact_source_dist` | wheels.yml | `source-distribution` |
 | `artifact_linux_no_nvx` | wheels.yml | `linux-wheels-no-nvx` |
 | `artifact_manylinux_x86_64` | wheels-docker.yml | `artifacts-manylinux_2_28_x86_64` |
@@ -223,6 +226,7 @@ download action. It maps artifact names via the `check-workflows` job outputs:
 | Linux | aarch64 | PyPy 3.11 | manylinux_2_36/2_38 | wheels-arm64.yml |
 | macOS | arm64 | 3.11, 3.12, 3.13, 3.14, PyPy 3.11 | N/A | wheels.yml |
 | Windows | x86_64 | 3.11, 3.12, 3.13, 3.14, PyPy 3.11 | N/A | wheels.yml |
+| Windows | arm64 | 3.11, 3.12, 3.13, 3.14 (no PyPy) | N/A | wheels.yml |
 
 ### Why Manylinux Containers?
 
