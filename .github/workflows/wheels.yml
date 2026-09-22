@@ -507,24 +507,6 @@ jobs:
           just build-all
         shell: pwsh
 
-      - name: Verify wheel platform tags (Windows)
-        if: matrix.platform == 'windows'
-        run: |
-          $expectedTag = if ('${{ matrix.arch }}' -eq 'arm64') { 'win_arm64' } else { 'win_amd64' }
-          $wheels = Get-ChildItem dist\*.whl
-          if ($wheels.Count -eq 0) {
-            Write-Host "::error::no wheels were produced in dist/"
-            exit 1
-          }
-          $bad = $wheels | Where-Object { $_.Name -notmatch $expectedTag }
-          if ($bad) {
-            Write-Host "::error::wheels do not carry the expected '$expectedTag' platform tag:"
-            $bad | ForEach-Object { Write-Host "  $($_.Name)" }
-            exit 1
-          }
-          Write-Host "OK: all $($wheels.Count) wheel(s) tagged '$expectedTag'"
-        shell: pwsh
-
       - name: Validate wheels integrity (Windows only)
         if: matrix.platform == 'windows'
         run: |
@@ -629,6 +611,16 @@ jobs:
           Write-Host "Built wheels:"
           Get-ChildItem dist
         shell: pwsh
+
+      # Runs on every build platform. Building only proves the extension compiles;
+      # `just test-wheels` installs each wheel into an ephemeral venv and runs the
+      # shared smoke tests against the shipped artifact. The two expectations are
+      # passed in because the build cannot derive them itself: Linux builds with
+      # AUTOBAHN_USE_NVX=0, and matrix.arch is what pins down the emulation trap
+      # where an x86_64 interpreter on the ARM64 runner yields win_amd64 wheels.
+      - name: Smoke test built wheels
+        shell: bash
+        run: just test-wheels ${{ matrix.platform == 'linux' && '0' || '1' }} ${{ matrix.arch }}
 
       - name: Upload wheel artifacts with cryptographic verification
         uses: wamp-proto/wamp-cicd/actions/upload-artifact-verified@main
