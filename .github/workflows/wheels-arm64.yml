@@ -191,10 +191,14 @@ jobs:
         if: matrix.target.build_type == 'custom'
         uses: nick-fields/retry@v3
         with:
-          # CFFI and flatc compilation under QEMU ARM64 emulation is very slow
-          # Builds can take 45+ minutes due to emulation overhead
-          timeout_minutes: 60
-          max_attempts: 3
+          # NVX (CFFI/flatc) AND autobahn's Rust base deps (cbor2 6.x, cryptography)
+          # all source-compile under QEMU ARM64 emulation — none ship a PyPy-aarch64
+          # wheel, so pip builds them from source, which is pathologically slow under
+          # emulation (a full run can exceed 60 min). Generous limits here are the
+          # interim, low-risk mitigation until we move ARM64 builds to native
+          # ubuntu-24.04-arm runners (removes emulation entirely). See #1947 and #1940.
+          timeout_minutes: 120
+          max_attempts: 9
           retry_on: error
           warning_on_retry: true
           command: |
@@ -216,10 +220,14 @@ jobs:
       - name: Build ARM64 wheels with NVX extension (with retry for QEMU flakiness)
         uses: nick-fields/retry@v3
         with:
-          # CFFI and flatc compilation under QEMU ARM64 emulation is very slow
-          # Builds can take 45+ minutes due to emulation overhead
-          timeout_minutes: 60
-          max_attempts: 3
+          # NVX (CFFI/flatc) AND autobahn's Rust base deps (cbor2 6.x, cryptography)
+          # all source-compile under QEMU ARM64 emulation — none ship a PyPy-aarch64
+          # wheel, so pip builds them from source, which is pathologically slow under
+          # emulation (a full run can exceed 60 min). Generous limits here are the
+          # interim, low-risk mitigation until we move ARM64 builds to native
+          # ubuntu-24.04-arm runners (removes emulation entirely). See #1947 and #1940.
+          timeout_minutes: 120
+          max_attempts: 9
           retry_on: error
           warning_on_retry: true
           command: |

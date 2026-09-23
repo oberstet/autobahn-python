@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autobahn"
-version = "26.9.1.dev1"
+version = "26.9.1.dev2"
 description = "WebSocket client & server library, WAMP real-time framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -42,7 +42,15 @@ classifiers = [
 
 dependencies = [
     "txaio>=25.12.2",
-    "cryptography>=3.4.6",
+    # cryptography is Rust/pyo3 with no pure-Python fallback, so it cannot be capped
+    # like cbor2 -- the floor is raised to the first release clear of known CVEs.
+    # PyPy (incl. PyPy-aarch64) binary wheels have shipped since 46.0.0 (so >=46
+    # already avoids the QEMU Rust source-compile of #1947), but 46.x is not a
+    # defensible security floor in 2026: CVE-2026-26007 (High, SECT subgroup) is
+    # fixed in 46.0.5, CVE-2026-39892 (buffer overflow) in 46.0.7, and the PKCS#7
+    # Bleichenbacher oracle only in 50.0.0. >=50 clears all three while keeping the
+    # PyPy-aarch64 wheels (50.0.1 is what resolves today). See #1947.
+    "cryptography>=50",
     "cffi>=2.0.0",  # Required for NVX native extensions; works on both CPython and PyPy
     "hyperlink>=21.0.0",
     "importlib-resources>=5.0.0; python_version < '3.10'",
@@ -51,12 +59,21 @@ dependencies = [
     "msgpack>=1.0.2; platform_python_implementation == 'CPython'",
     "u-msgpack-python>=2.1; platform_python_implementation != 'CPython'",
     "ujson>=4.0.2",  # Binary wheels for both CPython and PyPy
-    # cbor2 6.x is Rust/pyo3-only: no PyPy/Windows wheel and no pure-Python
-    # fallback, so it cannot be installed on PyPy/Windows. Cap < 6 there (the 5.x
-    # line ships a pure-Python wheel and runs at near-native speed on PyPy),
-    # while using cbor2 6.x everywhere else. See #1859.
-    "cbor2>=5.2.0; platform_python_implementation != 'PyPy' or sys_platform != 'win32'",
-    "cbor2>=5.2.0,<6; platform_python_implementation == 'PyPy' and sys_platform == 'win32'",
+    # cbor2: CPython gets the current 6.x line (Rust/pyo3, binary wheels everywhere
+    # CPython wheels are published). PyPy is deliberately kept OUT of the native-
+    # extension matrix and pinned to 5.9.0 -- the FINAL pure-Python release of cbor2.
+    # (The 6.x Rust line ships no PyPy wheel and has no pure-Python fallback, so on
+    # PyPy it would fail or source-compile Rust under emulation -- the root cause of
+    # the PyPy-aarch64 CI timeout in #1947.) 5.9.0 is an *exact* pin, not a range,
+    # because it is the last pure-Python cbor2 and already carries the max_depth
+    # decoder hardening for CVE-2026-26209; there is no later pure-Python release to
+    # float up to. The two lines are verified wire-equivalent: the WAMP serdes
+    # conformance suite (examples/serdes, run on BOTH CPython and PyPy in CI) asserts
+    # each encodes/decodes the wamp-proto canonical CBOR vectors byte-for-byte
+    # identically. The cost is that PyPy does not receive later cbor2 6.x fixes -- a
+    # known, reviewed divergence, not an accidental resolver failure. See #1859, #1947.
+    "cbor2>=6.1.0; platform_python_implementation != 'PyPy'",
+    "cbor2==5.9.0; platform_python_implementation == 'PyPy'",
     # NOTE: the WAMP "ubjson" serializer (bjdata) is an OPTIONAL extra, NOT a base
     # dependency: bjdata pulls in numpy, which we don't want in a minimal install.
     # See the [serialization] extra below. This also fixes #1849 (the old, wheel-less

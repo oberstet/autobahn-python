@@ -690,6 +690,12 @@ install-build-tools venv="": (create venv)
     ${VENV_PYTHON} -V
     ${VENV_PYTHON} -m pip -V
 
+    # Refresh pip + packaging first so wheel-tag resolution is current. This lets
+    # Rust/pyo3 deps that have no pure-Python fallback (notably `cryptography`)
+    # install a prebuilt wheel for newer platform tags (e.g. PyPy-aarch64 /
+    # manylinux_2_34) instead of source-compiling under QEMU emulation. See #1947.
+    ${VENV_PYTHON} -m pip install -U pip packaging
+
     ${VENV_PYTHON} -m pip install -e .[build-tools]
 
 # Install the development tools for this Package in a single environment (usage: `just install-tools cpy314`)
@@ -1363,7 +1369,8 @@ test-serdes venv="": (install-tools venv) (install-dev venv)
         examples/serdes/tests/test_goodbye.py \
         examples/serdes/tests/test_cancel.py \
         examples/serdes/tests/test_interrupt.py \
-        examples/serdes/tests/test_eventreceived.py
+        examples/serdes/tests/test_eventreceived.py \
+        examples/serdes/tests/test_cbor_cross_version.py
 
 # -----------------------------------------------------------------------------
 # -- Smoke tests (package verification)
