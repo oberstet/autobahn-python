@@ -42,12 +42,15 @@ classifiers = [
 
 dependencies = [
     "txaio>=25.12.2",
-    # cryptography is Rust/pyo3 with no pure-Python fallback. A recent floor (>=46)
-    # ensures a version that publishes binary wheels for PyPy (including PyPy-aarch64),
-    # so PyPy installs a wheel instead of source-compiling Rust under QEMU emulation
-    # (see #1947). It cannot be capped away like cbor2 (older cryptography carries
-    # known CVEs), so the floor is raised rather than pinned.
-    "cryptography>=46",
+    # cryptography is Rust/pyo3 with no pure-Python fallback, so it cannot be capped
+    # like cbor2 -- the floor is raised to the first release clear of known CVEs.
+    # PyPy (incl. PyPy-aarch64) binary wheels have shipped since 46.0.0 (so >=46
+    # already avoids the QEMU Rust source-compile of #1947), but 46.x is not a
+    # defensible security floor in 2026: CVE-2026-26007 (High, SECT subgroup) is
+    # fixed in 46.0.5, CVE-2026-39892 (buffer overflow) in 46.0.7, and the PKCS#7
+    # Bleichenbacher oracle only in 50.0.0. >=50 clears all three while keeping the
+    # PyPy-aarch64 wheels (50.0.1 is what resolves today). See #1947.
+    "cryptography>=50",
     "cffi>=2.0.0",  # Required for NVX native extensions; works on both CPython and PyPy
     "hyperlink>=21.0.0",
     "importlib-resources>=5.0.0; python_version < '3.10'",
