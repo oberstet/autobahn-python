@@ -195,7 +195,8 @@ jobs:
           ${VENV_PYTHON} -m pytest -v \
             --junitxml=test-results/serdes-${{ matrix.python-env }}/junit.xml \
             examples/serdes/tests/test_publish.py \
-            examples/serdes/tests/test_event.py
+            examples/serdes/tests/test_event.py \
+            examples/serdes/tests/test_cbor_cross_version.py
 
           # Create summary
           echo "SerDes Conformance Test Results - ${{ matrix.python-env }}" > test-results/serdes-${{ matrix.python-env }}/summary.txt
